@@ -7,7 +7,7 @@ import altair as alt
 
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-from prophet import Prophet
+from prophet import Prophet, StanBackendEnum  # <-- backend enum
 
 # --------------------------- PAGE & THEME ---------------------------
 st.set_page_config(page_title="Forecast Dashboard", layout="wide")
@@ -42,6 +42,18 @@ def _to_MS(s):
     """Normalize dates (month-end or any date) to month-start for alignment."""
     return pd.to_datetime(s).dt.to_period("M").dt.to_timestamp("MS")
 
+# Ensure CmdStan is available once (cached across sessions)
+@st.cache_resource
+def ensure_cmdstan():
+    from cmdstanpy import cmdstan_path, install_cmdstan
+    try:
+        _ = cmdstan_path()
+    except Exception:
+        install_cmdstan()
+    return True
+
+ensure_cmdstan()
+
 # ========================= FORECAST HELPERS =========================
 @st.cache_data
 def get_costume_forecast_df() -> pd.DataFrame:
@@ -73,7 +85,7 @@ def get_costume_forecast_df() -> pd.DataFrame:
                             enforce_stationarity=False, enforce_invertibility=False)
                 res = m.fit(disp=False)
                 fc = res.get_forecast(steps=len(test_df))
-                _ = root_mean_squared_error(test_df["y"], fc.predicted_mean)  # just compute; you fixed best params below
+                _ = root_mean_squared_error(test_df["y"], fc.predicted_mean)
             except Exception:
                 continue
 
@@ -152,7 +164,8 @@ def get_toys_forecast_df() -> pd.DataFrame:
                 daily_seasonality=False,
                 seasonality_mode="multiplicative",
                 changepoint_prior_scale=cps,
-                seasonality_prior_scale=sps
+                seasonality_prior_scale=sps,
+                stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
             )
             m.add_regressor("oct_bump", mode="multiplicative")
             m.add_regressor("dec_peak", mode="multiplicative")
@@ -176,7 +189,8 @@ def get_toys_forecast_df() -> pd.DataFrame:
         daily_seasonality=False,
         seasonality_mode="multiplicative",
         changepoint_prior_scale=best_params[0],
-        seasonality_prior_scale=best_params[1]
+        seasonality_prior_scale=best_params[1],
+        stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
     )
     m_full.add_regressor("oct_bump", mode="multiplicative")
     m_full.add_regressor("dec_peak", mode="multiplicative")
@@ -218,7 +232,8 @@ def get_bicycles_forecast_df() -> pd.DataFrame:
         interval_width=0.8,
         yearly_seasonality=True,
         weekly_seasonality=False,
-        daily_seasonality=False
+        daily_seasonality=False,
+        stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
     )
     _quiet(model.fit, monthly_bicycles)
 
