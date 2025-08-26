@@ -7,14 +7,15 @@ import altair as alt
 
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-#from prophet import Prophet, StanBackendEnum  # <-- backend enum
 from prophet import Prophet
 from prophet.models import StanBackendEnum
 
+# ---- runtime env (quiet + cache) ----
+os.environ.setdefault("CMDSTANPY_DISABLE_VERBOSE_LOGGING", "1")
+os.environ.setdefault("PROPHET_CACHE_DIR", "./prophet_cache")
 
 # --------------------------- PAGE & THEME ---------------------------
 st.set_page_config(page_title="Forecast Dashboard", layout="wide")
-
 st.markdown("""
 <style>
   .block-container {padding-top: 1.1rem; padding-bottom: 0.6rem;}
@@ -26,7 +27,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DATA_PATH = "(3) BABA JINA SALES DATA.xlsx"  # keep your filename
+DATA_PATH = "(3) BABA JINA SALES DATA.xlsx"  # file at repo root
 
 # ---------------------- UTILITIES & QUIET LOGGING -------------------
 for name in ["cmdstanpy", "prophet"]:
@@ -48,11 +49,31 @@ def _to_MS(s):
 # Ensure CmdStan is available once (cached across sessions)
 @st.cache_resource
 def ensure_cmdstan():
+    """
+    Ensure CmdStan is present. Pin a known-good version, install locally,
+    and limit compile cores to avoid timeouts on small cloud runners.
+    """
+    from pathlib import Path
     from cmdstanpy import cmdstan_path, install_cmdstan
+
+    install_dir = Path(".cmdstan")
+    install_dir.mkdir(exist_ok=True)
+
+    # Already available?
     try:
         _ = cmdstan_path()
+        return True
     except Exception:
-        install_cmdstan()
+        pass
+
+    # Fresh install (first run only)
+    install_cmdstan(
+        version="2.33.0",
+        dir=str(install_dir),
+        cores=1,          # important on Streamlit Cloud
+        progress=True
+    )
+    os.environ["CMDSTAN"] = str(install_dir / "cmdstan-2.33.0")
     return True
 
 ensure_cmdstan()
@@ -69,15 +90,13 @@ def get_costume_forecast_df() -> pd.DataFrame:
     # Monthly aggregation (month-start index)
     monthly_df = (costume_df.groupby(pd.Grouper(key="ds", freq="MS")).sum()
                   .reset_index().set_index("ds").asfreq("MS"))
-    # Differencing (your script)
     monthly_df["y_diff"] = monthly_df["y"].diff()
     monthly_df = monthly_df.dropna()
 
-    # Train / test
+    # Train / test (kept per your script)
     train_df = monthly_df[monthly_df.index.year <= 2023].copy()
     test_df  = monthly_df[monthly_df.index.year == 2024].copy()
 
-    # Grid (kept as your code; errors are skipped)
     p = d = q = range(0, 2)
     pdq = list(itertools.product(p, d, q))
     seasonal_pdq = [(x, y, z, 12) for x, y, z in pdq]
@@ -140,7 +159,7 @@ def get_toys_forecast_df() -> pd.DataFrame:
                       .reset_index().rename(columns={"Date":"ds","Quantity":"y"})
                       .sort_values("ds").dropna(subset=["ds","y"]).reset_index(drop=True))
 
-    # Split 2024 holdout (kept from your code)
+    # 2024 holdout
     train_df = monthly_toy_df[monthly_toy_df["ds"].dt.year <= 2023].copy()
     test_df  = monthly_toy_df[monthly_toy_df["ds"].dt.year == 2024].copy()
 
@@ -168,7 +187,7 @@ def get_toys_forecast_df() -> pd.DataFrame:
                 seasonality_mode="multiplicative",
                 changepoint_prior_scale=cps,
                 seasonality_prior_scale=sps,
-                stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
+                stan_backend=StanBackendEnum.CMDSTANPY,
             )
             m.add_regressor("oct_bump", mode="multiplicative")
             m.add_regressor("dec_peak", mode="multiplicative")
@@ -193,7 +212,7 @@ def get_toys_forecast_df() -> pd.DataFrame:
         seasonality_mode="multiplicative",
         changepoint_prior_scale=best_params[0],
         seasonality_prior_scale=best_params[1],
-        stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
+        stan_backend=StanBackendEnum.CMDSTANPY,
     )
     m_full.add_regressor("oct_bump", mode="multiplicative")
     m_full.add_regressor("dec_peak", mode="multiplicative")
@@ -236,7 +255,7 @@ def get_bicycles_forecast_df() -> pd.DataFrame:
         yearly_seasonality=True,
         weekly_seasonality=False,
         daily_seasonality=False,
-        stan_backend=StanBackendEnum.CMDSTANPY,  # <-- force CmdStanPy
+        stan_backend=StanBackendEnum.CMDSTANPY,
     )
     _quiet(model.fit, monthly_bicycles)
 
