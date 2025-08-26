@@ -8,10 +8,5 @@ statsmodels==0.14.2
 scikit-learn==1.4.2
 altair==5.3.0
 
-# Prophet (PyStan backend) + pins
-Cython<3
-setuptools<70
-pystan==2.19.1.1
 prophet==1.1.5
-holidays==0.24
-convertdate==2.4.0
+cmdstanpy==1.2.4
