@@ -8,6 +8,9 @@ import altair as alt
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from prophet import Prophet, StanBackendEnum  # <-- backend enum
+from prophet import Prophet
+from prophet.models import StanBackendEnum
+
 
 # --------------------------- PAGE & THEME ---------------------------
 st.set_page_config(page_title="Forecast Dashboard", layout="wide")
